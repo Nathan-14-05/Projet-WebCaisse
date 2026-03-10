@@ -1,0 +1,423 @@
+== Mission 1 - Souscription en ligne et Sécurité
+
+=== Partie 1 – Évolution de la base de données
+
+====
+**Question 1.1**
+====
+[plantuml, diagramme-classe, png]
+....
+@startuml
+skinparam classAttributeIconSize 0
+
+class Client {
++ id : int
++ raisonSociale : string
++ rue : string
++ codePostal : string
++ ville : string
++ telephone : string
+}
+
+class PointDeVente {
++ id : int
++ nom : string
++ adresse : string
+}
+
+class Formule {
++ id : int
++ libelle : string
++ prix : float
++ nbVendeursSimultanes : int
+}
+
+class ProgrammeFidelite {
++ id : int
++ libelle : string
+}
+
+class Langue {
++ id : int
++ nomLangue : string
+}
+
+' Relations et Cardinalités
+Client "1" -- "0..*" PointDeVente : possède
+PointDeVente "0..*" -- "1" Formule : choisit
+PointDeVente "0..*" -- "1" ProgrammeFidelite : définit
+PointDeVente "0..*" -- "1..*" Langue : active
+
+@enduml
+....
+
+Un Client --- possède ---> 1..* Points de Vente.
+
+Un Point de Vente --- utilise ---> 1 Formule.
+
+Un Point de Vente --- choisit ---> 1 ProgFidelite.
+
+Un Point de Vente --- active ---> * Langue.
+====
+**Question 1.2**
+====
+
+Analyse de la faille (DICP & RGPD) :
+
+Confidentialité : L'envoi de mots de passe en clair par e-mail expose les accès à une interception réseau et à un stockage non sécurisé dans les boîtes mail des utilisateurs.
+
+Conformité RGPD : Cette pratique contrevient aux obligations de protection des données personnelles, exposant l'entreprise à des sanctions en cas de fuite d'accès.
+
+Processus sécurisé proposé :
+
+Génération de jeton : Lors de l'inscription, le compte est créé sans mot de passe définitif.
+
+Lien unique : Le système envoie par e-mail un lien temporaire, unique et éphémère (token) menant vers une page de définition du mot de passe.
+
+Hachage sécurisé : Lors de la définition, le mot de passe est immédiatement haché côté serveur via un algorithme robuste (ex: bcrypt ou argon2) avant stockage, garantissant qu'aucun mot de passe en clair ne circule ni ne soit enregistré.
+
+=== Partie 3 - Gestion du changement de formule (Triggers)
+
+====
+**Question 1.3**
+====
+La structure proposée par mon collègue est inadaptée pour gérer l'historique de facturation pour les raisons suivantes :
+
+Absence de temporalité (Dimension temps) : La table actuelle ne contient aucune colonne permettant de dater l'activation d'une formule (ex: dateDebut, dateFin). Sans ces informations, il est impossible de savoir quelle formule était active à quel moment précis du mois.
+
+Impossibilité de calcul de facturation : Pour facturer au prorata temporis (selon la durée d'activation), le système doit connaître la durée exacte entre deux changements de formule. La structure actuelle ne permet pas de reconstruire cette chronologie.
+
+====
+**Question 1.4**
+====
+- Correction de la structure
+
+La table doit gérer le temps pour permettre l'historique et la facturation.
+
+Nouvelle table : HistoriqueFormule (#idPointDeVente, #idFormule, dateDebut, dateFin).
+
+Clé primaire : (idPointDeVente, dateDebut).
+
+Avantages :
+
+Chaque changement est daté précisément.
+
+On peut revenir à une ancienne formule sans erreur.
+
+Le calcul de la facturation mensuelle devient possible via les dates.
+
+====
+**Question 1.5**
+====
+
+[source,sql]
+----
+CREATE TRIGGER tg_audit_changement_formule
+AFTER UPDATE ON PointDeVente
+FOR EACH ROW
+BEGIN
+    IF OLD.idFormule <> NEW.idFormule THEN
+        INSERT INTO AuditFormule (idPointDeVente, ancien_idFormule, nouveau_idFormule, date_changement)
+        VALUES (OLD.id, OLD.idFormule, NEW.idFormule, NOW());
+    END IF;
+END;
+----
+
+Fonctionnement :
+
+Le trigger s'active après chaque UPDATE sur PointDeVente.
+
+La condition IF vérifie qu'il y a bien un changement de formule.
+
+L'instruction INSERT archive les données dans AuditFormule.
+
+== Mission 2 : Fidélisation des consommateurs et Robustesse
+
+=== Partie 1 – Amélioration du module GRC et Injection SQL
+
+====
+**Question 2.1**
+====
+Écrire les requêtes SQL permettant d’extraire les informations suivantes :
+
+a) La liste des consommateurs (nom, prénom, courriel) pour lesquels au moins une vente a été réalisée en 2017.
+
+b) Le nombre de consommateurs fidélisés appartenant à la tranche d’âge 18-30 ans.
+
+c) La liste des consommateurs avec le montant total des ventes réalisées pour chacun.
+
+a)
+
+[source,sql]
+----
+SELECT DISTINCT C.nom, C.prenom, C.mail
+FROM Conso C
+JOIN Vente V ON C.id = V.idConso
+WHERE YEAR(V.dateVente) = 2017;
+----
+
+b)
+
+[source,sql]
+----
+SELECT COUNT(*) AS NbFideles18_30
+FROM ConsoFidele
+WHERE TIMESTAMPDIFF(YEAR, dateNaiss, CURDATE()) BETWEEN 18 AND 30;
+----
+c)
+
+[source,sql]
+----
+SELECT C.nom, C.prenom, SUM(V.montantVente) AS Total
+FROM Conso C
+JOIN Vente V ON C.id = V.idConso
+GROUP BY C.id, C.nom, C.prenom;
+----
+
+====
+**Question 2.1**
+====
+Cette faille s'appelle l'Injection SQL. C'est l'une des vulnérabilités les plus critiques du classement OWASP (Open Web Application Security Project) car elle permettra à un attaquant de:
+
+Lire des données confidentielles (même les mots de passe).
+
+Modifier ou Supprimer des informations.
+
+Prendre parfois le contrôle total du serveur de base de données.
+
+====
+**Question 2.3**
+====
+
+[source,java]
+----
+// 1. Préparation de la requête avec les marqueurs "?"
+String sql = "SELECT nom, prenom, mail, tel " +
+             "FROM Conso " +
+             "JOIN Vente ON Conso.id = Vente.idConso " +
+             "WHERE Conso.id NOT IN (SELECT id FROM ConsoFidele) " +
+             "AND dateVente BETWEEN ? AND ? " +
+             "GROUP BY Conso.id, nom, prenom, mail, tel " +
+             "HAVING COUNT(*) > ?";
+
+// 2. Utilisation de PreparedStatement (Bonnes pratiques OWASP)
+PreparedStatement pstmt = dbConnect.prepareStatement(sql);
+
+// 3. Passage sécurisé des paramètres
+pstmt.setString(1, dateDeb);     // Remplace le 1er "?" (Date de début)
+pstmt.setString(2, dateFin);     // Remplace le 2ème "?" (Date de fin)
+pstmt.setInt(3, seuilVentes);    // Remplace le 3ème "?" (Le seuil)
+
+// 4. Exécution
+ResultSet res = pstmt.executeQuery();
+----
+
+=== Partie 2 – Réalisation de tests unitaires (TDD)
+
+====
+**Question 2.4**
+====
+
+[source,java]
+----
+public void testInitConso() throws Exception {
+    ConsoFidele consoTest = new ConsoFidele("Lifo", "Paul",
+        " lifo.paul@gmail.com ", "0600000000",
+        new SimpleDateFormat("yyyy-MM-dd").parse("1961-01-03"),
+        new SimpleDateFormat("yyyy-MM-dd").parse("2017-01-05"));
+
+    // Vérifie que les points sont bien à 0 à l'initialisation
+    assertEquals("Erreur : les points doivent être à 0 à la création", 0.0, consoTest.getPointsFidelite());
+}
+----
+
+====
+**Question 2.5**
+====
+
+[source,java]
+----
+public void testAddMontant() throws Exception {
+    // Initialisation du consommateur de test
+    ConsoFidele consoTest = new ConsoFidele("Lifo", "Paul",
+        " lifo.paul@gmail.com ", "0600000000",
+        new SimpleDateFormat("yyyy-MM-dd").parse("1961-01-03"),
+        new SimpleDateFormat("yyyy-MM-dd").parse("2017-01-05"));
+
+    // 1. Test palier 10 points (Exemple : achat de 150€)
+    consoTest.addFidelite(3, 150);
+    assertEquals("Erreur palier 100-200€", 10.0, consoTest.getPointsFidelite());
+
+    // 2. Test palier 20 points (Exemple : ajout d'un achat de 300€)
+    // Le total doit devenir 10 + 20 = 30 points
+    consoTest.addFidelite(3, 300);
+    assertEquals("Erreur palier 201-500€", 30.0, consoTest.getPointsFidelite());
+
+    // 3. Test palier 50 points (Exemple : ajout d'un achat de 600€)
+    // Le total doit devenir 30 + 50 = 80 points
+    consoTest.addFidelite(3, 600);
+    assertEquals("Erreur palier > 500€", 80.0, consoTest.getPointsFidelite());
+}
+----
+
+== Mission 3 : Statistiques de ventes (POO)
+
+====
+**Question 3.1**
+====
+
+[source,java]
+----
+/**
+ * Calcule la part des ventes réalisées par des clients fidèles.
+ * * Cette méthode parcourt la liste des ventes passée en paramètre,
+ * compte celles dont le consommateur possède un programme de fidélité
+ * et calcule le ratio par rapport au nombre total de ventes.
+ *
+ * @param lesVentesDuJour ArrayList d'objets Vente représentant les transactions du jour.
+ * @return double Le pourcentage (entre 0 et 100) des ventes effectuées par des clients fidèles.
+ */
+public static double statVente(ArrayList<Vente> lesVentesDuJour) {
+    // ... code de la méthode
+}
+----
+
+====
+**Question 3.2**
+====
+
+[source,java]
+----
+// Retourne le nombre de ventes enregistrées dans la collection des ventes du consommateur
+public int getNbVentes() {
+    return this.lesVentes.size();
+}
+----
+
+this.lesVentes : Est la collection ArrayList<Vente> déclarée dans la classe Conso.
+
+size() : C'est la méthode native de Java qui compte le nombre d'objets stockés dans l'ArrayList.
+
+====
+**Question 3.3**
+====
+
+[source,java]
+----
+public VenteEcommerce(Date uneDateVente, Conso unConso, double unMontant,
+                      String uneAdresse, String uneOption) {
+    // Appel au constructeur de la classe mère (Vente)
+    super(uneDateVente, unConso, unMontant);
+
+    // Initialisation des attributs spécifiques
+    this.adresseLivraison = uneAdresse;
+    this.optionLivraison = uneOption;
+}
+----
+
+super() : Est une instruction obligatoire. Elle initialise les propriétés héritées (date, client, montant).
+
+====
+**Question 3.4**
+====
+...
+====
+**Question 3.5**
+====
+
+Cette instruction est dangereuse car si aucun client n'a effectué d'achat en ligne, la variable totalEcom restera à 0. En Java, diviser un nombre par zéro provoque :
+
+Une erreur ArithmeticException
+
+====
+**Question 3.6**
+====
+
+[source,java]
+----
+/**
+ * Retourne la liste des ventes dont le montant est supérieur à un seuil.
+ * @param seuil Le montant minimum (exclu)
+ * @return ArrayList<Vente> La liste des ventes filtrées
+ */
+public ArrayList<Vente> getVentesSuperieuresA(double seuil) {
+    ArrayList<Vente> ventesFiltrees = new ArrayList<Vente>();
+
+    for (Vente uneVente : this.lesVentes) {
+        if (uneVente.getMontantVente() > seuil) {
+            ventesFiltrees.add(uneVente);
+        }
+    }
+    return ventesFiltrees;
+}
+----
+
+
+== QUESTION DE SYNTHESE
+
+====
+1) Réglementation NF525
+====
+La norme NF525 impose des critères d'inaltérabilité, de sécurisation, de conservation et d'archivage des données de transaction. Pour WebCaisse, cela signifie :
+
+Toute vente doit être enregistrée sans possibilité de modification ou de suppression.
+
+Il faut générer une signature numérique pour chaque ticket.
+
+Il faut maintenir une piste d'audit pour prouver que les données n'ont pas été manipulées.
+
+====
+2) Identifiants en clair
+====
+C'est une faille critique car une messagerie (SMTP/IMAP) n'est pas toujours sécurisée. Un attaquant pratiquant une attaque "Man-in-the-Middle" peut intercepter les paquets et lire les identifiants. De plus, les logs des serveurs de mail conservent ces informations, exposant le système à un vol de compte permanent.
+
+====
+3) Historique de FormuleSouscrite
+====
+La structure initiale ne contenait probablement pas de date de début et de date de fin (ou une clé primaire composée avec une date). Sans colonne temporelle, toute nouvelle souscription écrase l'ancienne (UPDATE au lieu d'un INSERT), rendant impossible la consultation de ce que le client payait le mois précédent.
+
+====
+4) Intérêt d'un Trigger pour la traçabilité
+====
+Le Trigger s'exécute automatiquement côté serveur de base de données. Son intérêt est l'indépendance vis-à-vis de l'application : même si un administrateur modifie la base de données manuellement via un outil SQL, le Trigger enregistrera quand même la modification dans une table d'audit, garantissant une traçabilité inviolable par le code applicatif.
+
+====
+5) WHERE et HAVING
+====
+WHERE : Filtre les lignes avant le regroupement (Group By). On l'utilise pour filtrer les données brutes (ex: WHERE montant > 10).
+
+HAVING : Filtre les groupes après le regroupement. On l'utilise pour filtrer sur des résultats d'agrégats (ex: HAVING COUNT(id) > 5).
+
+====
+6) Injection SQL par concaténation
+====
+L'injection survient quand on construit la requête ainsi : "SELECT * FROM users WHERE login = '" + user + "'".
+Si un utilisateur malveillant saisit ' OR '1'='1, la requête devient : SELECT * FROM users WHERE login = '' OR '1'='1'. La clause devient toujours vraie, contournant ainsi toute authentification.
+
+====
+7) PreparedStatement et Statement
+====
+Sécurité : Le PreparedStatement utilise des paramètres liés (?), ce qui empêche l'injection SQL car les données sont traitées comme des valeurs et non comme du code SQL.
+
+Performance : La requête est pré-compilée par la base de données. Si elle est exécutée plusieurs fois avec des valeurs différentes, elle est beaucoup plus rapide qu'un Statement classique.
+
+====
+8) Utilisation de instanceof
+====
+Intérêt : Il permet de vérifier dynamiquement le type d'un objet (ex: if (vente instanceof VenteInternet)) pour exécuter un code spécifique.
+
+Critique : Son usage est souvent considéré comme un "code smell" (mauvaise pratique). Il casse le polymorphisme. Il est préférable d'utiliser des méthodes abstraites dans la classe mère et de redéfinir le comportement dans chaque classe enfant.
+
+====
+9) Division par zéro
+====
+En Java, diviser un entier par zéro lève une ArithmeticException qui fait planter le thread. Dans le calcul d'un indice de comparaison, si le dénominateur est nul (ex: aucune vente sur la période de référence), le programme s'arrête. Il est crucial de tester si le dénominateur est != 0 pour éviter le crash et afficher un résultat cohérent (ex: "Indice non calculable").
+
+====
+10) Rôle de Launcher et Main
+====
+Main : Hérite de Application et contient le code JavaFX (chargement du FXML, création de la Stage).
+
+Launcher : Il contient uniquement la méthode public static void main qui appelle Main.main.
+
+Pourquoi ? Depuis Java 11+, JavaFX est devenu un module externe. Cette séparation évite des erreurs de type "JavaFX runtime components are missing" lors du lancement, car le Launcher démarre en mode "standard" avant de basculer dans le contexte JavaFX.
