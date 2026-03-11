@@ -1,0 +1,163 @@
+= Correction Personnalisée - TP Étude de Cas WebCaisse
+:author: Correction pour M. MBoueya
+:toc: left
+:toc-title: Sommaire
+:icons: font
+
+Bonjour M. MBoueya.
+
+Globalement, le travail fourni sur les parties Étude de Cas (EDC) et les questions de synthèse est bon. Les concepts de bases de données, requêtage SQL, sécurité et programmation Java semblent compris.
+
+Cependant, les questions de synthèse doivent faire l'objet d'une validation orale avec M. Robert pour s'assurer de votre maîtrise réelle des concepts et vérifier qu'il ne s'agit pas uniquement d'un texte généré par une IA.
+
+Voici le retour détaillé sur vos réponses.
+
+---
+
+== Mission 1 : Souscription en ligne et Sécurité
+
+=== Question 1.1 — Proposition de structure de base de données
+**Votre proposition :** Diagramme PlantUML avec `Client`, `PointDeVente`, `Formule`, `ProgrammeFidelite` et `Langue`.
+
+[WARNING]
+.Remarque - Modélisation incomplète
+====
+Votre syntaxe PlantUML est correcte et les relations de base sont présentes. Toutefois, la modélisation est incomplète. Il manque la table `Module` et la table d'association `Composer` pour lier les modules aux formules. De plus, l'activation des langues est liée au module, et non directement au point de vente.
+
+*À valider oralement avec M. Robert.*
+====
+
+=== Question 1.2 — Faille de l'envoi de mot de passe
+**Votre réponse :** Problème de confidentialité, non-conformité RGPD. Proposition d'un jeton éphémère et d'un hachage robuste.
+
+[NOTE]
+.Évaluation - Conforme
+====
+L'analyse de la faille et le processus de remédiation proposé sont corrects. L'utilisation d'un lien d'activation temporaire correspond aux standards actuels.
+
+====
+
+=== Questions 1.3 et 1.4 — Historisation des formules
+**Votre réponse :** Manque de temporalité empêchant la facturation au prorata. Ajout d'une date de début et de fin.
+
+[NOTE]
+.Évaluation - Validé
+====
+Le diagnostic est exact. L'ajout d'une notion de temporalité (date de début) dans la clé primaire est la solution attendue pour gérer l'historique.
+
+====
+
+=== Question 1.5 — Trigger SQL
+**Votre réponse :** Déclencheur conditionné par `IF OLD.idFormule <> NEW.idFormule`.
+
+[TIP]
+.Remarque - Bonne pratique
+====
+L'écriture du déclencheur est correcte. L'utilisation de la condition pour vérifier qu'il y a un réel changement avant l'insertion dans la table d'audit est une bonne pratique.
+
+====
+
+== Mission 2 : Fidélisation des consommateurs
+
+=== Question 2.1 — Requêtes SQL
+**Vos requêtes :**
+
+[WARNING]
+.Remarque - Oubli dans la requête c
+====
+* **Requêtes a et b :** Correctes. Les filtres et jointures sont bien structurés.
+* **Requête c :** Incomplète. La consigne exigeait d'afficher l'adresse courriel. Il manque `C.mail` dans le `SELECT` et le `GROUP BY`.
+
+====
+
+=== Questions 2.2 et 2.3 — Faille de sécurité (OWASP) et PreparedStatement
+**Votre réponse :** Injection SQL identifiée. Utilisation de `PreparedStatement` dans le code Java.
+
+[WARNING]
+.Remarque - Types de données Java
+====
+L'identification de la faille est correcte. L'utilisation de `PreparedStatement` est la bonne méthode de sécurisation. Attention cependant à votre code Java : vous utilisez `pstmt.setString(1, dateDeb)` pour insérer une date. Il convient d'utiliser `pstmt.setDate()` avec les objets temporels appropriés.
+
+
+====
+
+=== Questions 2.4 et 2.5 — Tests unitaires (JUnit)
+**Votre réponse :** Tests des paliers de fidélité.
+
+[NOTE]
+.Évaluation - Conforme
+====
+Les tests couvrent correctement les différentes règles de gestion (10, 30 et 80 points).
+
+====
+
+== Mission 3 : Statistiques de ventes (POO)
+
+=== Questions 3.1 à 3.3 — Javadoc, Méthodes et Constructeur
+**Votre réponse :** Javadoc renseignée, méthode `size()` utilisée, constructeur avec appel `super()`.
+
+[NOTE]
+.Évaluation - Validé
+====
+L'implémentation répond aux consignes. L'appel au constructeur de la classe mère est correct.
+
+====
+
+=== Questions 3.4 et 3.5 — Polymorphisme et Robustesse
+**Votre réponse :** Identification de l'erreur `ArithmeticException` par division par zéro.
+
+[NOTE]
+.Remarque - Robustesse
+====
+Le risque de division par zéro est bien identifié.
+
+====
+
+=== Question 3.6 — Filtrage des ventes
+**Votre réponse :** Boucle `for` et liste filtrée.
+
+[NOTE]
+.Évaluation - Validé
+====
+L'algorithme de filtrage est correct et fonctionnel.
+
+====
+
+== Partie 3 : Questions de synthèse (Java, SQL et Sécurité)
+
+[WARNING]
+.Remarque - Validation obligatoire
+====
+M. MBoueya, les réponses fournies dans cette section sont précises et couvrent bien l'ensemble des concepts. Cependant, il est impératif de démontrer que ce contenu est maîtrisé et qu'il n'est pas le simple résultat d'une génération par IA.
+Vous devez me présenter et m'expliquer vos réponses oralement, avant envoi sur Git
+====
+
+=== 1. Normes et Traçabilité (NF525 et Triggers)
+**Votre réponse :** Lien entre NF525 (inaltérabilité) et la création d'une piste d'audit. Rôle du Trigger fonctionnant côté serveur indépendamment de l'application.
+* **Retour :** Réponse correcte.
+
+=== 2. Cybersécurité et OWASP (Mots de passe et Injections SQL)
+**Votre réponse :** Risque d'interception SMTP (Man-in-the-Middle). Explication de l'injection SQL altérant la logique d'authentification. Pré-compilation via `PreparedStatement`.
+* **Retour :** Analyse exacte des risques OWASP.
+
+=== 3. SQL Avancé (WHERE vs HAVING)
+**Votre réponse :** Distinction entre le filtrage pré-regroupement et post-regroupement.
+
+* **Retour :** Définition correcte.
+
+=== 4. Robustesse Java (Division par zéro et Launcher)
+**Votre réponse :** Identification de la cause de plantage du thread. Explication du module externe JavaFX et du contournement via le Launcher.
+
+* **Retour :** Explications techniques valides.
+
+=== 5. Conception Orientée Objet : La critique de `instanceof`
+**Votre réponse :** Indique que l'usage d'`instanceof` est une mauvaise pratique cassant le polymorphisme, et préconise la redéfinition de méthodes.
+
+* **Retour :** C'est le constat attendu concernant le principe ouvert/fermé.
+
+== Conclusion
+
+Note estimée : 19 / 20
+
+Le travail écrit et le prototype sont très satisfaisant. Pour valider définitivement ces acquis et maintenir ces niveaux d' évaluation, vous devrez :
+- Contacter M. Robert pour un contrôle oral sur vos réponses à l'étude de cas et aux questions de synthèse.
